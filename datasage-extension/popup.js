@@ -25,13 +25,19 @@ function initializeEventListeners() {
   });
   
   // Button listeners
+  document.getElementById('detectUrlBtn')?.addEventListener('click', detectCurrentTabUrl);
+  document.getElementById('generateNameBtn')?.addEventListener('click', generateSmartProjectName);
   document.getElementById('testUrlBtn')?.addEventListener('click', testUrl);
   document.getElementById('addDomQueryBtn')?.addEventListener('click', () => addExtractionRule('dom'));
   document.getElementById('addJsEvalBtn')?.addEventListener('click', () => addExtractionRule('js'));
+  document.getElementById('clearButton')?.addEventListener('click', clearAutomation);
   document.getElementById('runButton')?.addEventListener('click', runAutomation);
   
   // Checkbox listener
   document.getElementById('requiresAuth')?.addEventListener('change', toggleAuthFields);
+  
+  // Auto-generate name when URL changes
+  document.getElementById('targetUrl')?.addEventListener('change', autoGenerateProjectName);
   
   // Save config on input changes
   const inputFields = [
@@ -135,11 +141,166 @@ function toggleAuthFields() {
   }
 }
 
+// Detect Current Tab URL
+async function detectCurrentTabUrl() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    
+    if (tab && tab.url) {
+      // Don't allow chrome:// or edge:// URLs
+      if (tab.url.startsWith('chrome://') || tab.url.startsWith('edge://') || tab.url.startsWith('about:')) {
+        showStatus('Cannot use browser internal pages', 'error');
+        return;
+      }
+      
+      document.getElementById('targetUrl').value = tab.url;
+      showStatus(`Detected URL from current tab: ${new URL(tab.url).hostname}`, 'success');
+      
+      // Auto-generate project name if empty
+      const projectNameField = document.getElementById('projectName');
+      if (!projectNameField.value) {
+        autoGenerateProjectName();
+      }
+      
+      saveConfig();
+    }
+  } catch (error) {
+    console.error('Error detecting tab URL:', error);
+    showStatus('Failed to detect current tab URL', 'error');
+  }
+}
+
+// Generate Smart Project Name from URL
+function generateSmartProjectName() {
+  const targetUrl = document.getElementById('targetUrl').value;
+  
+  if (!targetUrl) {
+    showStatus('Please enter a target URL first', 'error');
+    return;
+  }
+  
+  try {
+    const url = new URL(targetUrl);
+    const hostname = url.hostname.replace('www.', '');
+    const pathParts = url.pathname.split('/').filter(p => p && p !== '');
+    
+    // Extract domain name without TLD
+    const domainParts = hostname.split('.');
+    const domainName = domainParts[0];
+    
+    // Capitalize first letter
+    const capitalize = (str) => str.charAt(0).toUpperCase() + str.slice(1);
+    
+    // Generate name from domain and path
+    let name = capitalize(domainName);
+    
+    if (pathParts.length > 0) {
+      // Use the last meaningful path segment
+      const lastPath = pathParts[pathParts.length - 1];
+      name += ' ' + capitalize(lastPath.replace(/[-_]/g, ' '));
+    }
+    
+    // Add "Validator" suffix
+    name += ' Validator';
+    
+    document.getElementById('projectName').value = name;
+    showStatus(`Generated project name: ${name}`, 'success');
+    saveConfig();
+  } catch (error) {
+    showStatus('Invalid URL format', 'error');
+  }
+}
+
+// Auto-generate project name when URL changes (only if field is empty)
+function autoGenerateProjectName() {
+  const projectNameField = document.getElementById('projectName');
+  if (!projectNameField.value) {
+    generateSmartProjectName();
+  }
+}
+
+// Clear Automation Results and Logs
+function clearAutomation() {
+  const confirmed = confirm('This will reset all settings to default values. Are you sure?');
+  
+  if (!confirmed) {
+    return;
+  }
+  
+  // Reset all form fields to defaults
+  document.getElementById('projectName').value = '';
+  document.getElementById('targetUrl').value = '';
+  document.getElementById('outputFormat').value = 'json';
+  document.getElementById('pageTimeout').value = '30000';
+  document.getElementById('retryAttempts').value = '3';
+  document.getElementById('headlessMode').checked = true;
+  document.getElementById('requiresAuth').checked = false;
+  document.getElementById('loginUrl').value = '';
+  document.getElementById('username').value = '';
+  document.getElementById('password').value = '';
+  document.getElementById('usernameSelector').value = '#username';
+  document.getElementById('passwordSelector').value = '#password';
+  document.getElementById('submitSelector').value = "button[type='submit']";
+  
+  // Clear extraction rules
+  extractionRules = [];
+  renderExtractionRules();
+  updateRulesCount();
+  
+  // Clear results
+  const resultsContainer = document.getElementById('resultsContainer');
+  resultsContainer.innerHTML = `
+    <div class="empty-state">
+      <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="empty-icon">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" x2="12" y1="8" y2="12"></line>
+        <line x1="12" x2="12.01" y1="16" y2="16"></line>
+      </svg>
+      <h3>No results yet</h3>
+      <p>Execute the automation to see extracted data here</p>
+    </div>
+  `;
+  
+  // Clear logs
+  const logsContainer = document.getElementById('logsContainer');
+  logsContainer.innerHTML = '';
+  
+  // Reset UI state - collapse sections that should be collapsed
+  const authSection = document.getElementById('authSection');
+  const logsSection = document.getElementById('logsSection');
+  const advancedSettings = document.getElementById('advancedSettings');
+  const authFields = document.getElementById('authFields');
+  
+  // Collapse authentication section
+  if (authSection && !authSection.classList.contains('hidden')) {
+    toggleSection('authSection');
+  }
+  
+  // Collapse logs section
+  if (logsSection && !logsSection.classList.contains('hidden')) {
+    toggleSection('logsSection');
+  }
+  
+  // Collapse advanced settings
+  if (advancedSettings && !advancedSettings.classList.contains('hidden')) {
+    toggleSection('advancedSettings');
+  }
+  
+  // Hide auth fields
+  authFields.classList.add('hidden');
+  
+  // Save cleared config
+  saveConfig();
+  
+  showStatus('All settings reset to defaults', 'success');
+}
+
 // Add Extraction Rule
 function addExtractionRule(type) {
   const rule = {
     id: Date.now(),
     type: type,
+    extractionType: 'custom', // custom, table, list, button, link, image
     name: '',
     selector: '',
     jsCode: '',
@@ -192,13 +353,24 @@ function renderExtractionRules() {
         </div>
         ${rule.type === 'dom' ? `
           <div class="form-group">
+            <label>Extraction Type</label>
+            <select data-rule-id="${rule.id}" data-field="extractionType">
+              <option value="custom" ${rule.extractionType === 'custom' ? 'selected' : ''}>Custom Selector</option>
+              <option value="table" ${rule.extractionType === 'table' ? 'selected' : ''}>Table Data</option>
+              <option value="list" ${rule.extractionType === 'list' ? 'selected' : ''}>List Items</option>
+              <option value="button" ${rule.extractionType === 'button' ? 'selected' : ''}>Button/Link Text</option>
+              <option value="image" ${rule.extractionType === 'image' ? 'selected' : ''}>Image Source</option>
+              <option value="input" ${rule.extractionType === 'input' ? 'selected' : ''}>Input Field Value</option>
+            </select>
+          </div>
+          <div class="form-group">
             <label>CSS Selector</label>
             <div class="input-with-button">
               <input type="text" 
                 class="mono-input" 
                 data-rule-id="${rule.id}"
                 data-field="selector"
-                placeholder="div.revenue-widget .total-value" 
+                placeholder="${getSelectorPlaceholder(rule.extractionType || 'custom')}" 
                 value="${rule.selector}" />
               <button class="icon-button" data-action="test-selector" data-rule-id="${rule.id}" title="Test Selector">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -208,6 +380,7 @@ function renderExtractionRules() {
                 </svg>
               </button>
             </div>
+            <p class="help-text">${getExtractionTypeHelp(rule.extractionType || 'custom')}</p>
           </div>
           <div class="form-group">
             <label>Attribute to Extract</label>
@@ -218,6 +391,7 @@ function renderExtractionRules() {
               <option value="href" ${rule.attribute === 'href' ? 'selected' : ''}>href</option>
               <option value="src" ${rule.attribute === 'src' ? 'selected' : ''}>src</option>
               <option value="value" ${rule.attribute === 'value' ? 'selected' : ''}>value</option>
+              <option value="count" ${rule.attribute === 'count' ? 'selected' : ''}>Count Elements</option>
             </select>
           </div>
         ` : `
@@ -238,6 +412,32 @@ function renderExtractionRules() {
   
   // Attach event listeners to newly created elements
   attachRuleEventListeners();
+}
+
+// Get placeholder text based on extraction type
+function getSelectorPlaceholder(extractionType) {
+  const placeholders = {
+    custom: 'div.revenue-widget .total-value',
+    table: 'table#data-table tbody tr',
+    list: 'ul#pending-orders li',
+    button: 'button.submit-btn',
+    image: 'img.profile-photo',
+    input: 'input#email-field'
+  };
+  return placeholders[extractionType] || placeholders.custom;
+}
+
+// Get help text based on extraction type
+function getExtractionTypeHelp(extractionType) {
+  const helpTexts = {
+    custom: 'Enter any CSS selector to target specific elements',
+    table: 'Select table rows (tr) to extract data from each row',
+    list: 'Select list items (li) to count or extract text from each item',
+    button: 'Select buttons or links to extract their text or attributes',
+    image: 'Select images to extract their src attribute',
+    input: 'Select input fields to extract their values'
+  };
+  return helpTexts[extractionType] || helpTexts.custom;
 }
 
 // Attach event listeners to rule elements
@@ -666,6 +866,7 @@ function addDemoRule() {
     extractionRules.push({
       id: Date.now(),
       type: 'dom',
+      extractionType: 'custom',
       name: 'Total Revenue',
       selector: 'div.revenue-widget .total-value',
       attribute: 'textContent'
