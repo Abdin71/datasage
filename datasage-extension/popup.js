@@ -2,6 +2,9 @@
 let extractionRules = [];
 let isRunning = false;
 
+// Session-only password storage (cleared when popup closes)
+let sessionPassword = null;
+
 // Backend API URL
 const API_URL = 'http://localhost:3001/api/automation';
 
@@ -10,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initializeEventListeners();
   initializeChevrons();
   loadSavedConfig();
+  loadSessionState(); // Load previous session state
   updateRulesCount();
   addDemoRule();
 });
@@ -35,6 +39,9 @@ function initializeEventListeners() {
   
   // Checkbox listener
   document.getElementById('requiresAuth')?.addEventListener('change', toggleAuthFields);
+  
+  // Password field listener - store in session memory only
+  document.getElementById('password')?.addEventListener('input', storePasswordInSession);
   
   // Auto-generate name when URL changes
   document.getElementById('targetUrl')?.addEventListener('change', autoGenerateProjectName);
@@ -136,9 +143,20 @@ function toggleAuthFields() {
   
   if (requiresAuth) {
     authFields.classList.remove('hidden');
+    // Restore session password if exists
+    if (sessionPassword) {
+      document.getElementById('password').value = sessionPassword;
+    }
   } else {
     authFields.classList.add('hidden');
   }
+}
+
+// Store password in session memory only (not persisted to disk)
+function storePasswordInSession() {
+  const password = document.getElementById('password').value;
+  sessionPassword = password;
+  saveSessionState(); // Persist to session storage
 }
 
 // Detect Current Tab URL
@@ -238,6 +256,8 @@ function clearAutomation() {
   document.getElementById('loginUrl').value = '';
   document.getElementById('username').value = '';
   document.getElementById('password').value = '';
+  // Clear session password
+  sessionPassword = null;
   document.getElementById('usernameSelector').value = '#username';
   document.getElementById('passwordSelector').value = '#password';
   document.getElementById('submitSelector').value = "button[type='submit']";
@@ -729,6 +749,9 @@ function displayResults(result) {
   
   // Attach event listener to copy button
   document.getElementById('copyResultsBtn')?.addEventListener('click', copyResults);
+  
+  // Save results to session for persistence
+  saveResultsToSession(result, result.logs || []);
 }
 
 // Display Error
@@ -884,6 +907,10 @@ function loadSavedConfig() {
       document.getElementById('requiresAuth').checked = config.requiresAuth || false;
       document.getElementById('loginUrl').value = config.loginUrl || '';
       document.getElementById('username').value = config.username || '';
+      // Restore session password if available (in-memory only)
+      if (sessionPassword) {
+        document.getElementById('password').value = sessionPassword;
+      }
       document.getElementById('usernameSelector').value = config.usernameSelector || '#username';
       document.getElementById('passwordSelector').value = config.passwordSelector || '#password';
       document.getElementById('submitSelector').value = config.submitSelector || "button[type='submit']";
@@ -914,4 +941,63 @@ function addDemoRule() {
     renderExtractionRules();
     updateRulesCount();
   }
+}
+
+// Load session state (results, logs, running status)
+function loadSessionState() {
+  chrome.storage.session.get(['sessionState'], (result) => {
+    if (result.sessionState) {
+      const state = result.sessionState;
+      
+      // Restore last results if available
+      if (state.lastResults) {
+        displayResults(state.lastResults);
+      }
+      
+      // Restore logs
+      if (state.lastLogs && state.lastLogs.length > 0) {
+        state.lastLogs.forEach(log => addLog(log.message, log.level));
+      }
+      
+      // Restore status
+      if (state.lastStatus) {
+        showStatus(state.lastStatus.message, state.lastStatus.type);
+      }
+      
+      // Restore password from session (if stored)
+      if (state.sessionPassword) {
+        sessionPassword = state.sessionPassword;
+        const passwordField = document.getElementById('password');
+        if (passwordField && document.getElementById('requiresAuth').checked) {
+          passwordField.value = sessionPassword;
+        }
+      }
+    }
+  });
+}
+
+// Save session state (for persistence across popup close/open)
+function saveSessionState() {
+  const state = {
+    sessionPassword: sessionPassword, // Keep password in session
+    lastStatus: {
+      message: document.getElementById('statusText')?.textContent,
+      type: 'info'
+    },
+    timestamp: Date.now()
+  };
+  
+  chrome.storage.session.set({ sessionState: state });
+}
+
+// Save results and logs to session
+function saveResultsToSession(results, logs) {
+  chrome.storage.session.get(['sessionState'], (result) => {
+    const state = result.sessionState || {};
+    state.lastResults = results;
+    state.lastLogs = logs;
+    state.timestamp = Date.now();
+    
+    chrome.storage.session.set({ sessionState: state });
+  });
 }

@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const puppeteerRunner = require('../lib/puppeteer-runner');
+const formatter = require('../lib/formatter');
+const validator = require('../lib/validator');
 const logger = require('../lib/logger');
 
 /**
@@ -14,17 +16,14 @@ router.post('/automation', async (req, res) => {
     const config = req.body;
     
     // Validate configuration
-    if (!config.target || !config.target.url) {
-      return res.status(400).json({
-        success: false,
-        message: 'Missing required field: target.url'
-      });
-    }
+    const validation = validator.validateConfig(config);
     
-    if (!config.extraction || config.extraction.length === 0) {
+    if (!validation.valid) {
+      logger.warn('Validation failed:', validation.errors);
       return res.status(400).json({
         success: false,
-        message: 'At least one extraction rule is required'
+        message: 'Configuration validation failed',
+        errors: validation.errors
       });
     }
     
@@ -37,8 +36,11 @@ router.post('/automation', async (req, res) => {
     const duration = Date.now() - startTime;
     logger.info(`Automation completed in ${duration}ms`);
     
-    // Return results
-    res.json({
+    // Get output format (default to json)
+    const outputFormat = (config.outputFormat || 'json').toLowerCase();
+    
+    // Prepare response data
+    const responseData = {
       success: true,
       projectName: config.projectName,
       timestamp: new Date().toISOString(),
@@ -46,7 +48,25 @@ router.post('/automation', async (req, res) => {
       data: result.data,
       logs: result.logs,
       screenshots: result.screenshots || []
-    });
+    };
+    
+    // Format based on requested format
+    if (outputFormat === 'json') {
+      // Return JSON (default)
+      res.json(responseData);
+    } else {
+      // Format data only (not metadata)
+      const formattedData = formatter.format(result.data, outputFormat);
+      const contentType = formatter.getContentType(outputFormat);
+      const extension = formatter.getFileExtension(outputFormat);
+      
+      // Set appropriate headers
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', `attachment; filename="${config.projectName || 'data'}.${extension}"`);
+      
+      // Send formatted data
+      res.send(formattedData);
+    }
     
   } catch (error) {
     logger.error(`Automation failed: ${error.message}`);
