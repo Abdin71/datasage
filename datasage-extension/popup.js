@@ -678,20 +678,58 @@ async function runAutomation() {
       throw new Error(error.message || 'Backend request failed');
     }
     
-    const result = await response.json();
+    // Check response content type to handle different formats
+    const contentType = response.headers.get('Content-Type');
+    const outputFormat = config.outputFormat || 'json';
     
-    // Display results
-    displayResults(result);
+    let result;
     
-    // Display logs
-    if (result.logs && result.logs.length > 0) {
-      result.logs.forEach(log => addLog(log.message, log.level));
-    }
-    
-    if (result.success) {
-      showStatus('Automation completed successfully ✓', 'success');
+    if (outputFormat === 'json' || contentType.includes('application/json')) {
+      // Parse as JSON
+      result = await response.json();
+      
+      // Display results
+      displayResults(result);
+      
+      // Display logs
+      if (result.logs && result.logs.length > 0) {
+        result.logs.forEach(log => addLog(log.message, log.level));
+      }
+      
+      if (result.success) {
+        showStatus('Automation completed successfully ✓', 'success');
+      } else {
+        showStatus('Automation completed with errors', 'warning');
+      }
     } else {
-      showStatus('Automation completed with errors', 'warning');
+      // Handle CSV/XML as text download
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      
+      // Extract filename from Content-Disposition header or use default
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = `data.${outputFormat}`;
+      
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?(.+?)"?$/);
+        if (filenameMatch) {
+          filename = filenameMatch[1];
+        }
+      }
+      
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      
+      showStatus(`${outputFormat.toUpperCase()} file downloaded: ${filename}`, 'success');
+      addLog(`Data exported as ${outputFormat.toUpperCase()}`, 'success');
+      
+      // Show download success in results
+      displayDownloadSuccess(filename, outputFormat);
     }
     
   } catch (error) {
@@ -766,6 +804,29 @@ function displayError(message) {
       </svg>
       <h3>Automation Failed</h3>
       <p>${message}</p>
+    </div>
+  `;
+}
+
+// Display Download Success
+function displayDownloadSuccess(filename, format) {
+  const container = document.getElementById('resultsContainer');
+  container.innerHTML = `
+    <div class="success-state">
+      <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="success-icon">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="7 10 12 15 17 10"></polyline>
+        <line x1="12" x2="12" y1="15" y2="3"></line>
+      </svg>
+      <h3>File Downloaded Successfully</h3>
+      <p class="download-info">
+        <strong>Filename:</strong> ${filename}<br>
+        <strong>Format:</strong> ${format.toUpperCase()}<br>
+        <strong>Status:</strong> <span style="color: var(--success);">✓ Download complete</span>
+      </p>
+      <p class="help-text" style="margin-top: 16px;">
+        Check your Downloads folder for the exported file.
+      </p>
     </div>
   `;
 }

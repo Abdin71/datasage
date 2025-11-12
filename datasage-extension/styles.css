@@ -447,8 +447,15 @@ button {
   color: var(--muted);
 }
 
+.success-state {
+  text-align: center;
+  padding: 48px 16px;
+  color: var(--muted);
+}
+
 .empty-icon,
-.error-icon {
+.error-icon,
+.success-icon {
   margin: 0 auto 16px;
   opacity: 0.5;
 }
@@ -457,17 +464,29 @@ button {
   color: var(--error);
 }
 
+.success-icon {
+  color: var(--success);
+  opacity: 0.8;
+}
+
 .empty-state h3,
-.error-state h3 {
+.error-state h3,
+.success-state h3 {
   font-size: 16px;
   margin-bottom: 8px;
   color: var(--foreground);
 }
 
 .empty-state p,
-.error-state p {
+.error-state p,
+.success-state p {
   font-size: 13px;
   color: var(--muted);
+}
+
+.download-info {
+  line-height: 1.8;
+  margin-top: 16px;
 }
 
 .empty-message {
