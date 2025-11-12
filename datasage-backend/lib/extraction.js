@@ -9,7 +9,11 @@ class Extraction {
    */
   async extractDOM(page, rule) {
     try {
-      const { selector, attribute = 'textContent' } = rule;
+      const { selector, selectorType = 'css', attribute = 'textContent' } = rule;
+      
+      if (selectorType === 'xpath') {
+        return await this.extractXPath(page, rule);
+      }
       
       // Wait for element to be present
       await page.waitForSelector(selector, { timeout: 5000 });
@@ -29,6 +33,9 @@ class Extraction {
           return element.innerText?.trim();
         } else if (attr === 'innerHTML') {
           return element.innerHTML?.trim();
+        } else if (attr === 'count') {
+          // Count all elements matching the selector
+          return document.querySelectorAll(sel).length;
         } else {
           return element.getAttribute(attr);
         }
@@ -43,11 +50,68 @@ class Extraction {
   }
 
   /**
+   * Extract data using XPath selector
+   */
+  async extractXPath(page, rule) {
+    try {
+      const { selector, attribute = 'textContent' } = rule;
+      
+      // Extract data using XPath
+      const value = await page.evaluate((xpath, attr) => {
+        const result = document.evaluate(
+          xpath,
+          document,
+          null,
+          XPathResult.FIRST_ORDERED_NODE_TYPE,
+          null
+        );
+        
+        const element = result.singleNodeValue;
+        
+        if (!element) {
+          return null;
+        }
+        
+        // Handle different attribute types
+        if (attr === 'textContent') {
+          return element.textContent?.trim();
+        } else if (attr === 'innerText') {
+          return element.innerText?.trim();
+        } else if (attr === 'innerHTML') {
+          return element.innerHTML?.trim();
+        } else if (attr === 'count') {
+          // Count all elements matching the XPath
+          const countResult = document.evaluate(
+            xpath,
+            document,
+            null,
+            XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+            null
+          );
+          return countResult.snapshotLength;
+        } else {
+          return element.getAttribute(attr);
+        }
+      }, selector, attribute);
+      
+      return value;
+      
+    } catch (error) {
+      logger.error(`XPath extraction error: ${error.message}`);
+      throw new Error(`Could not extract using XPath "${rule.selector}": ${error.message}`);
+    }
+  }
+
+  /**
    * Extract data using DOM selector (multiple elements)
    */
   async extractDOMMultiple(page, rule) {
     try {
-      const { selector, attribute = 'textContent' } = rule;
+      const { selector, selectorType = 'css', attribute = 'textContent' } = rule;
+      
+      if (selectorType === 'xpath') {
+        return await this.extractXPathMultiple(page, rule);
+      }
       
       // Wait for elements to be present
       await page.waitForSelector(selector, { timeout: 5000 });
@@ -74,6 +138,49 @@ class Extraction {
     } catch (error) {
       logger.error(`DOM multiple extraction error: ${error.message}`);
       throw new Error(`Could not extract multiple using selector "${rule.selector}": ${error.message}`);
+    }
+  }
+
+  /**
+   * Extract data using XPath selector (multiple elements)
+   */
+  async extractXPathMultiple(page, rule) {
+    try {
+      const { selector, attribute = 'textContent' } = rule;
+      
+      // Extract data from all matching elements using XPath
+      const values = await page.evaluate((xpath, attr) => {
+        const result = document.evaluate(
+          xpath,
+          document,
+          null,
+          XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+          null
+        );
+        
+        const elements = [];
+        for (let i = 0; i < result.snapshotLength; i++) {
+          elements.push(result.snapshotItem(i));
+        }
+        
+        return elements.map(element => {
+          if (attr === 'textContent') {
+            return element.textContent?.trim();
+          } else if (attr === 'innerText') {
+            return element.innerText?.trim();
+          } else if (attr === 'innerHTML') {
+            return element.innerHTML?.trim();
+          } else {
+            return element.getAttribute(attr);
+          }
+        });
+      }, selector, attribute);
+      
+      return values;
+      
+    } catch (error) {
+      logger.error(`XPath multiple extraction error: ${error.message}`);
+      throw new Error(`Could not extract multiple using XPath "${rule.selector}": ${error.message}`);
     }
   }
 

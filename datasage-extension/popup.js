@@ -301,6 +301,7 @@ function addExtractionRule(type) {
     id: Date.now(),
     type: type,
     extractionType: 'custom', // custom, table, list, button, link, image
+    selectorType: 'css', // css or xpath
     name: '',
     selector: '',
     jsCode: '',
@@ -364,13 +365,20 @@ function renderExtractionRules() {
             </select>
           </div>
           <div class="form-group">
-            <label>CSS Selector</label>
+            <label>Selector Type</label>
+            <select data-rule-id="${rule.id}" data-field="selectorType">
+              <option value="css" ${(rule.selectorType || 'css') === 'css' ? 'selected' : ''}>CSS Selector</option>
+              <option value="xpath" ${rule.selectorType === 'xpath' ? 'selected' : ''}>XPath</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>${rule.selectorType === 'xpath' ? 'XPath Expression' : 'CSS Selector'}</label>
             <div class="input-with-button">
               <input type="text" 
                 class="mono-input" 
                 data-rule-id="${rule.id}"
                 data-field="selector"
-                placeholder="${getSelectorPlaceholder(rule.extractionType || 'custom')}" 
+                placeholder="${getSelectorPlaceholder(rule.extractionType || 'custom', rule.selectorType || 'css')}" 
                 value="${rule.selector}" />
               <button class="icon-button" data-action="test-selector" data-rule-id="${rule.id}" title="Test Selector">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -380,7 +388,7 @@ function renderExtractionRules() {
                 </svg>
               </button>
             </div>
-            <p class="help-text">${getExtractionTypeHelp(rule.extractionType || 'custom')}</p>
+            <p class="help-text">${getExtractionTypeHelp(rule.extractionType || 'custom', rule.selectorType || 'css')}</p>
           </div>
           <div class="form-group">
             <label>Attribute to Extract</label>
@@ -415,29 +423,53 @@ function renderExtractionRules() {
 }
 
 // Get placeholder text based on extraction type
-function getSelectorPlaceholder(extractionType) {
-  const placeholders = {
-    custom: 'div.revenue-widget .total-value',
-    table: 'table#data-table tbody tr',
-    list: 'ul#pending-orders li',
-    button: 'button.submit-btn',
-    image: 'img.profile-photo',
-    input: 'input#email-field'
-  };
-  return placeholders[extractionType] || placeholders.custom;
+function getSelectorPlaceholder(extractionType, selectorType = 'css') {
+  if (selectorType === 'xpath') {
+    const xpathPlaceholders = {
+      custom: '//div[@class="revenue-widget"]//span[@class="total-value"]',
+      table: '//table[@id="data-table"]//tbody//tr',
+      list: '//ul[@id="pending-orders"]/li',
+      button: '//button[contains(@class, "submit-btn")]',
+      image: '//img[@class="profile-photo"]',
+      input: '//input[@id="email-field"]'
+    };
+    return xpathPlaceholders[extractionType] || xpathPlaceholders.custom;
+  } else {
+    const cssPlaceholders = {
+      custom: 'div.revenue-widget .total-value',
+      table: 'table#data-table tbody tr',
+      list: 'ul#pending-orders li',
+      button: 'button.submit-btn',
+      image: 'img.profile-photo',
+      input: 'input#email-field'
+    };
+    return cssPlaceholders[extractionType] || cssPlaceholders.custom;
+  }
 }
 
 // Get help text based on extraction type
-function getExtractionTypeHelp(extractionType) {
-  const helpTexts = {
-    custom: 'Enter any CSS selector to target specific elements',
-    table: 'Select table rows (tr) to extract data from each row',
-    list: 'Select list items (li) to count or extract text from each item',
-    button: 'Select buttons or links to extract their text or attributes',
-    image: 'Select images to extract their src attribute',
-    input: 'Select input fields to extract their values'
-  };
-  return helpTexts[extractionType] || helpTexts.custom;
+function getExtractionTypeHelp(extractionType, selectorType = 'css') {
+  if (selectorType === 'xpath') {
+    const xpathHelpTexts = {
+      custom: 'Enter an XPath expression to target specific elements',
+      table: 'Use XPath to select table rows (//tr) to extract data from each row',
+      list: 'Use XPath to select list items (//li) to count or extract text from each item',
+      button: 'Use XPath to select buttons or links to extract their text or attributes',
+      image: 'Use XPath to select images to extract their src attribute',
+      input: 'Use XPath to select input fields to extract their values'
+    };
+    return xpathHelpTexts[extractionType] || xpathHelpTexts.custom;
+  } else {
+    const cssHelpTexts = {
+      custom: 'Enter any CSS selector to target specific elements',
+      table: 'Select table rows (tr) to extract data from each row',
+      list: 'Select list items (li) to count or extract text from each item',
+      button: 'Select buttons or links to extract their text or attributes',
+      image: 'Select images to extract their src attribute',
+      input: 'Select input fields to extract their values'
+    };
+    return cssHelpTexts[extractionType] || cssHelpTexts.custom;
+  }
 }
 
 // Attach event listeners to rule elements
@@ -481,6 +513,12 @@ function updateRule(ruleId, field, value) {
   const rule = extractionRules.find(r => r.id === ruleId);
   if (rule) {
     rule[field] = value;
+    
+    // Re-render if selectorType or extractionType changes (to update placeholder and help text)
+    if (field === 'selectorType' || field === 'extractionType') {
+      renderExtractionRules();
+    }
+    
     saveConfig();
   }
 }
@@ -569,6 +607,7 @@ async function runAutomation() {
       name: rule.name,
       type: rule.type,
       selector: rule.type === 'dom' ? rule.selector : undefined,
+      selectorType: rule.type === 'dom' ? (rule.selectorType || 'css') : undefined,
       attribute: rule.type === 'dom' ? rule.attribute : undefined,
       jsCode: rule.type === 'js' ? rule.jsCode : undefined
     }))
@@ -867,6 +906,7 @@ function addDemoRule() {
       id: Date.now(),
       type: 'dom',
       extractionType: 'custom',
+      selectorType: 'css',
       name: 'Total Revenue',
       selector: 'div.revenue-widget .total-value',
       attribute: 'textContent'
