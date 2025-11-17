@@ -16,6 +16,52 @@ document.addEventListener('DOMContentLoaded', () => {
   loadSessionState(); // Load previous session state
   updateRulesCount();
   addDemoRule();
+  restoreLastState(); // Restore last automation state on open
+});
+
+// Listen for messages FROM the background script
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'AUTOMATION_COMPLETE') {
+    isRunning = false;
+    updateRunButton(false);
+    displayResults(message.result);
+    if (message.result.logs && message.result.logs.length > 0) {
+      message.result.logs.forEach(log => addLog(log.message, log.level));
+    }
+    showStatus('Automation completed successfully ✓', 'success');
+    addLog('Background automation completed!', 'success');
+  } else if (message.type === 'AUTOMATION_COMPLETE_DOWNLOAD') {
+    isRunning = false;
+    updateRunButton(false);
+    
+    // Trigger download from base64 data
+    const byteCharacters = atob(message.data.split(',')[1]);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray]);
+    
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = message.filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+    
+    displayDownloadSuccess(message.filename, message.format);
+    showStatus(`${message.format.toUpperCase()} file downloaded: ${message.filename}`, 'success');
+    addLog('Background automation completed with download!', 'success');
+  } else if (message.type === 'AUTOMATION_ERROR') {
+    isRunning = false;
+    updateRunButton(false);
+    displayError(message.error);
+    addLog(`Automation failed: ${message.error}`, 'error');
+    showStatus(`Error: ${message.error}`, 'error');
+  }
 });
 
 // Initialize all event listeners (no inline onclick handlers allowed in Manifest V3)
@@ -609,7 +655,8 @@ async function runAutomation() {
   updateRunButton(true);
   clearResults();
   clearLogs();
-  showStatus('Connecting to backend...', 'loading');
+  showStatus('Sending to background task...', 'loading');
+  addLog('Handing off execution to the background service.', 'info');
   
   // Build configuration
   const config = {
@@ -662,92 +709,12 @@ async function runAutomation() {
   // Save configuration
   saveConfig();
   
-  try {
-    addLog('Sending request to backend server...', 'info');
-    
-    const response = await fetch(API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(config)
-    });
-    
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Backend request failed');
-    }
-    
-    // Check response content type to handle different formats
-    const contentType = response.headers.get('Content-Type');
-    const outputFormat = config.outputFormat || 'json';
-    
-    let result;
-    
-    if (outputFormat === 'json' || contentType.includes('application/json')) {
-      // Parse as JSON
-      result = await response.json();
-      
-      // Display results
-      displayResults(result);
-      
-      // Display logs
-      if (result.logs && result.logs.length > 0) {
-        result.logs.forEach(log => addLog(log.message, log.level));
-      }
-      
-      if (result.success) {
-        showStatus('Automation completed successfully ✓', 'success');
-      } else {
-        showStatus('Automation completed with errors', 'warning');
-      }
-    } else {
-      // Handle CSV/XML as text download
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      
-      // Extract filename from Content-Disposition header or use default
-      const contentDisposition = response.headers.get('Content-Disposition');
-      let filename = `data.${outputFormat}`;
-      
-      if (contentDisposition) {
-        const filenameMatch = contentDisposition.match(/filename="?(.+?)"?$/);
-        if (filenameMatch) {
-          filename = filenameMatch[1];
-        }
-      }
-      
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-      
-      showStatus(`${outputFormat.toUpperCase()} file downloaded: ${filename}`, 'success');
-      addLog(`Data exported as ${outputFormat.toUpperCase()}`, 'success');
-      
-      // Show download success in results
-      displayDownloadSuccess(filename, outputFormat);
-    }
-    
-  } catch (error) {
-    console.error('Automation error:', error);
-    
-    if (error.message.includes('fetch')) {
-      showStatus('Cannot connect to backend server. Is it running on port 3001?', 'error');
-      addLog('Backend server connection failed. Make sure the server is running.', 'error');
-    } else {
-      showStatus(`Error: ${error.message}`, 'error');
-      addLog(`Automation failed: ${error.message}`, 'error');
-    }
-    
-    displayError(error.message);
-  } finally {
-    isRunning = false;
-    updateRunButton(false);
-  }
+  // Send the config to the background script to run the automation
+  chrome.runtime.sendMessage({ type: 'RUN_AUTOMATION', config: config });
+  
+  // The popup's job is done for now. It will get updates via a different listener.
+  showStatus('Running in background... You can close this popup.', 'loading');
+  addLog('Automation is running in background. Safe to close popup.', 'info');
 }
 
 // Display Results
@@ -1061,4 +1028,26 @@ function saveResultsToSession(results, logs) {
     
     chrome.storage.session.set({ sessionState: state });
   });
+}
+
+// Restore last automation state on popup open
+async function restoreLastState() {
+  const { lastResult, lastError, lastDownload, status } = await chrome.storage.session.get(['lastResult', 'lastError', 'lastDownload', 'status']);
+
+  if (status === 'complete' && lastResult) {
+    displayResults(lastResult);
+    if (lastResult.logs) {
+      lastResult.logs.forEach(log => addLog(log.message, log.level));
+    }
+    showStatus('Last run completed successfully.', 'success');
+    addLog('Restored results from background execution', 'info');
+  } else if (status === 'complete' && lastDownload) {
+    displayDownloadSuccess(lastDownload.filename, lastDownload.format);
+    showStatus(`Last run completed: ${lastDownload.filename}`, 'success');
+    addLog('Background automation completed with download', 'info');
+  } else if (status === 'error' && lastError) {
+    displayError(lastError);
+    addLog(`Last run failed: ${lastError}`, 'error');
+    showStatus(`Last run failed: ${lastError}`, 'error');
+  }
 }
