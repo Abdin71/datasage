@@ -8,6 +8,16 @@ let sessionPassword = null;
 // Backend API URL
 const API_URL = 'http://localhost:3001/api/automation';
 
+// Debug mode - set to true for development logging
+const DEBUG_MODE = false;
+
+// Debug logging helper
+function debugLog(...args) {
+  if (DEBUG_MODE) {
+    console.log(...args);
+  }
+}
+
 // Helper function to escape HTML
 function escapeHtml(text) {
   const map = {
@@ -41,7 +51,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       message.result.logs.forEach(log => addLog(log.message, log.level));
     }
     showStatus('Automation completed successfully ✓', 'success');
-    addLog('Background automation completed!', 'success');
   } else if (message.type === 'AUTOMATION_ERROR') {
     isRunning = false;
     updateRunButton(false);
@@ -205,7 +214,7 @@ async function detectCurrentTabUrl() {
       }
       
       document.getElementById('targetUrl').value = tab.url;
-      showStatus(`Detected URL from current tab: ${new URL(tab.url).hostname}`, 'success');
+      showStatus('URL detected from current tab', 'success');
       
       // Auto-generate project name if empty
       const projectNameField = document.getElementById('projectName');
@@ -255,7 +264,7 @@ function generateSmartProjectName() {
     name += ' Validator';
     
     document.getElementById('projectName').value = name;
-    showStatus(`Generated project name: ${name}`, 'success');
+    showStatus('Project name set', 'success');
     saveConfig();
   } catch (error) {
     showStatus('Invalid URL format', 'error');
@@ -589,8 +598,6 @@ function testUrl() {
     return;
   }
   
-  showStatus('Testing URL...', 'loading');
-  
   // Simple validation
   try {
     new URL(url);
@@ -602,7 +609,7 @@ function testUrl() {
 
 // Test Selector
 function testSelector(ruleId) {
-  showStatus('Selector testing requires execution', 'info');
+  // Selector testing happens during execution
 }
 
 // Run Automation
@@ -642,8 +649,8 @@ async function runAutomation() {
   updateRunButton(true);
   clearResults();
   clearLogs();
-  showStatus('Sending to background task...', 'loading');
-  addLog('Handing off execution to the background service.', 'info');
+  showStatus('Starting automation...', 'loading');
+  addLog('Starting data extraction...', 'info');
   
   // Build configuration
   const config = {
@@ -697,27 +704,26 @@ async function runAutomation() {
   saveConfig();
   
   // Send the config to the background script to run the automation
-  console.log('Popup: Sending RUN_AUTOMATION message to background');
-  console.log('Config:', config);
+  debugLog('Popup: Sending RUN_AUTOMATION message to background');
+  debugLog('Config:', config);
   chrome.runtime.sendMessage({ type: 'RUN_AUTOMATION', config: config }, (response) => {
-    console.log('Popup: Message sent, response:', response);
+    debugLog('Popup: Message sent, response:', response);
     if (chrome.runtime.lastError) {
       console.error('Popup: Message error:', chrome.runtime.lastError);
-      addLog('Failed to start background automation: ' + chrome.runtime.lastError.message, 'error');
-      showStatus('Error: Could not start background task', 'error');
+      addLog('Failed to start automation', 'error');
+      showStatus('Error: Could not start automation', 'error');
       isRunning = false;
       updateRunButton(false);
     }
   });
   
   // The popup's job is done for now. It will get updates via a different listener.
-  showStatus('Running in background... You can close this popup.', 'loading');
-  addLog('Automation is running in background. Safe to close popup.', 'info');
+  showStatus('Automation running... (safe to close)', 'loading');
 }
 
 // Display Results
 function displayResults(result) {
-  console.log('displayResults called with:', result);
+  debugLog('displayResults called with:', result);
   const container = document.getElementById('resultsContainer');
   
   if (!result.data || Object.keys(result.data).length === 0) {
@@ -740,9 +746,9 @@ function displayResults(result) {
   const formattedData = result.formattedData || JSON.stringify(result.data, null, 2);
   const filename = result.filename || `data.${outputFormat}`;
   
-  console.log('Output format:', outputFormat);
-  console.log('Formatted data preview:', formattedData.substring(0, 200));
-  console.log('Filename:', filename);
+  debugLog('Output format:', outputFormat);
+  debugLog('Formatted data preview:', formattedData.substring(0, 200));
+  debugLog('Filename:', filename);
   
   // Determine display label and icon
   let formatLabel = outputFormat.toUpperCase();
@@ -1096,8 +1102,7 @@ async function restoreLastState() {
     if (lastResult.logs) {
       lastResult.logs.forEach(log => addLog(log.message, log.level));
     }
-    showStatus('Last run completed successfully.', 'success');
-    addLog('Restored results from background execution', 'info');
+    showStatus('Showing previous results', 'success');
   } else if (status === 'error' && lastError) {
     displayError(lastError);
     addLog(`Last run failed: ${lastError}`, 'error');
