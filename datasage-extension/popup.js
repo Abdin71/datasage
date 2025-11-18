@@ -8,6 +8,18 @@ let sessionPassword = null;
 // Backend API URL
 const API_URL = 'http://localhost:3001/api/automation';
 
+// Helper function to escape HTML
+function escapeHtml(text) {
+  const map = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  };
+  return text.replace(/[&<>"']/g, m => map[m]);
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
   initializeEventListeners();
@@ -705,6 +717,7 @@ async function runAutomation() {
 
 // Display Results
 function displayResults(result) {
+  console.log('displayResults called with:', result);
   const container = document.getElementById('resultsContainer');
   
   if (!result.data || Object.keys(result.data).length === 0) {
@@ -726,6 +739,10 @@ function displayResults(result) {
   const outputFormat = result.outputFormat || 'json';
   const formattedData = result.formattedData || JSON.stringify(result.data, null, 2);
   const filename = result.filename || `data.${outputFormat}`;
+  
+  console.log('Output format:', outputFormat);
+  console.log('Formatted data preview:', formattedData.substring(0, 200));
+  console.log('Filename:', filename);
   
   // Determine display label and icon
   let formatLabel = outputFormat.toUpperCase();
@@ -767,7 +784,7 @@ function displayResults(result) {
           ` : ''}
         </div>
       </div>
-      <pre class="results-json" id="resultsContent">${formattedData}</pre>
+      <pre class="results-json" id="resultsContent">${escapeHtml(formattedData)}</pre>
     </div>
   `;
   
