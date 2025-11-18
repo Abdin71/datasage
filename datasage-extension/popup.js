@@ -703,6 +703,13 @@ async function runAutomation() {
   // Save configuration
   saveConfig();
   
+  // Set status to running in session storage
+  chrome.storage.session.set({ 
+    status: 'running',
+    projectName: projectName,
+    timestamp: Date.now()
+  });
+  
   // Send the config to the background script to run the automation
   debugLog('Popup: Sending RUN_AUTOMATION message to background');
   debugLog('Config:', config);
@@ -714,6 +721,8 @@ async function runAutomation() {
       showStatus('Error: Could not start automation', 'error');
       isRunning = false;
       updateRunButton(false);
+      // Clear running status
+      chrome.storage.session.set({ status: 'idle' });
     }
   });
   
@@ -1095,9 +1104,31 @@ function saveResultsToSession(results, logs) {
 
 // Restore last automation state on popup open
 async function restoreLastState() {
-  const { lastResult, lastError, status } = await chrome.storage.session.get(['lastResult', 'lastError', 'status']);
+  const { lastResult, lastError, status, projectName } = await chrome.storage.session.get(['lastResult', 'lastError', 'status', 'projectName']);
 
-  if (status === 'complete' && lastResult) {
+  if (status === 'running') {
+    // Automation is still running
+    isRunning = true;
+    updateRunButton(true);
+    clearResults();
+    const runningMessage = projectName ? `Running "${projectName}"...` : 'Running automation...';
+    showStatus(runningMessage, 'loading');
+    addLog('Automation in progress...', 'info');
+    
+    // Show running state in results container
+    const container = document.getElementById('resultsContainer');
+    container.innerHTML = `
+      <div class="empty-state">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="empty-icon">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" x2="12" y1="8" y2="12"></line>
+          <line x1="12" x2="12.01" y1="16" y2="16"></line>
+        </svg>
+        <h3>Automation Running</h3>
+        <p>Extracting data... You'll be notified when complete.</p>
+      </div>
+    `;
+  } else if (status === 'complete' && lastResult) {
     displayResults(lastResult);
     if (lastResult.logs) {
       lastResult.logs.forEach(log => addLog(log.message, log.level));

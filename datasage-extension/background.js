@@ -52,6 +52,14 @@ async function runAutomationInBackground(config) {
   
   try {
     console.log('Starting background automation for:', config.projectName);
+    
+    // Set status to running
+    await chrome.storage.session.set({ 
+      status: 'running',
+      projectName: config.projectName,
+      timestamp: Date.now()
+    });
+    
     console.log('Fetching:', API_URL);
     
     const response = await fetch(API_URL, {
