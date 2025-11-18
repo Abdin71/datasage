@@ -374,10 +374,36 @@ button {
   border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .copy-button:hover {
   background: var(--secondary);
+}
+
+.download-button {
+  background: var(--primary);
+  color: white;
+  padding: 6px 12px;
+  border: 1px solid var(--primary);
+  border-radius: 6px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.download-button:hover {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+.button-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .button-row {

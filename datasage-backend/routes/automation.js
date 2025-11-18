@@ -39,34 +39,26 @@ router.post('/automation', async (req, res) => {
     // Get output format (default to json)
     const outputFormat = (config.outputFormat || 'json').toLowerCase();
     
-    // Prepare response data
+    // Format the data based on requested format
+    const formattedData = formatter.format(result.data, outputFormat);
+    const extension = formatter.getFileExtension(outputFormat);
+    
+    // Prepare response data (always return JSON with formatted content)
     const responseData = {
       success: true,
       projectName: config.projectName,
       timestamp: new Date().toISOString(),
       duration: `${duration}ms`,
-      data: result.data,
+      outputFormat: outputFormat,
+      formattedData: formattedData, // Include formatted string
+      data: result.data, // Keep original data
       logs: result.logs,
-      screenshots: result.screenshots || []
+      screenshots: result.screenshots || [],
+      filename: `${config.projectName || 'data'}.${extension}`
     };
     
-    // Format based on requested format
-    if (outputFormat === 'json') {
-      // Return JSON (default)
-      res.json(responseData);
-    } else {
-      // Format data only (not metadata)
-      const formattedData = formatter.format(result.data, outputFormat);
-      const contentType = formatter.getContentType(outputFormat);
-      const extension = formatter.getFileExtension(outputFormat);
-      
-      // Set appropriate headers
-      res.setHeader('Content-Type', contentType);
-      res.setHeader('Content-Disposition', `attachment; filename="${config.projectName || 'data'}.${extension}"`);
-      
-      // Send formatted data
-      res.send(formattedData);
-    }
+    // Always return JSON (extension will handle display/download)
+    res.json(responseData);
     
   } catch (error) {
     logger.error(`Automation failed: ${error.message}`);

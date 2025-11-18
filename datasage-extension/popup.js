@@ -30,31 +30,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     showStatus('Automation completed successfully ✓', 'success');
     addLog('Background automation completed!', 'success');
-  } else if (message.type === 'AUTOMATION_COMPLETE_DOWNLOAD') {
-    isRunning = false;
-    updateRunButton(false);
-    
-    // Trigger download from base64 data
-    const byteCharacters = atob(message.data.split(',')[1]);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    const blob = new Blob([byteArray]);
-    
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = message.filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-    
-    displayDownloadSuccess(message.filename, message.format);
-    showStatus(`${message.format.toUpperCase()} file downloaded: ${message.filename}`, 'success');
-    addLog('Background automation completed with download!', 'success');
   } else if (message.type === 'AUTOMATION_ERROR') {
     isRunning = false;
     updateRunButton(false);
@@ -710,7 +685,18 @@ async function runAutomation() {
   saveConfig();
   
   // Send the config to the background script to run the automation
-  chrome.runtime.sendMessage({ type: 'RUN_AUTOMATION', config: config });
+  console.log('Popup: Sending RUN_AUTOMATION message to background');
+  console.log('Config:', config);
+  chrome.runtime.sendMessage({ type: 'RUN_AUTOMATION', config: config }, (response) => {
+    console.log('Popup: Message sent, response:', response);
+    if (chrome.runtime.lastError) {
+      console.error('Popup: Message error:', chrome.runtime.lastError);
+      addLog('Failed to start background automation: ' + chrome.runtime.lastError.message, 'error');
+      showStatus('Error: Could not start background task', 'error');
+      isRunning = false;
+      updateRunButton(false);
+    }
+  });
   
   // The popup's job is done for now. It will get updates via a different listener.
   showStatus('Running in background... You can close this popup.', 'loading');
@@ -736,24 +722,61 @@ function displayResults(result) {
     return;
   }
   
+  // Get the output format
+  const outputFormat = result.outputFormat || 'json';
+  const formattedData = result.formattedData || JSON.stringify(result.data, null, 2);
+  const filename = result.filename || `data.${outputFormat}`;
+  
+  // Determine display label and icon
+  let formatLabel = outputFormat.toUpperCase();
+  let downloadIcon = '';
+  
+  if (outputFormat === 'csv') {
+    formatLabel = 'CSV';
+    downloadIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+      <polyline points="7 10 12 15 17 10"></polyline>
+      <line x1="12" x2="12" y1="15" y2="3"></line>
+    </svg>`;
+  } else if (outputFormat === 'xml') {
+    formatLabel = 'XML';
+    downloadIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+      <polyline points="7 10 12 15 17 10"></polyline>
+      <line x1="12" x2="12" y1="15" y2="3"></line>
+    </svg>`;
+  }
+  
   container.innerHTML = `
     <div class="results-data">
       <div class="results-header">
-        <h3>Extracted Data</h3>
-        <button class="copy-button" id="copyResultsBtn">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect>
-            <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>
-          </svg>
-          Copy JSON
-        </button>
+        <h3>Extracted Data (${formatLabel})</h3>
+        <div class="button-group">
+          <button class="copy-button" id="copyResultsBtn" title="Copy ${formatLabel} to clipboard">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect>
+              <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>
+            </svg>
+            Copy ${formatLabel}
+          </button>
+          ${outputFormat !== 'json' ? `
+          <button class="download-button" id="downloadResultsBtn" title="Download ${filename}">
+            ${downloadIcon}
+            Download
+          </button>
+          ` : ''}
+        </div>
       </div>
-      <pre class="results-json" id="resultsJson">${JSON.stringify(result.data, null, 2)}</pre>
+      <pre class="results-json" id="resultsContent">${formattedData}</pre>
     </div>
   `;
   
-  // Attach event listener to copy button
-  document.getElementById('copyResultsBtn')?.addEventListener('click', copyResults);
+  // Attach event listeners
+  document.getElementById('copyResultsBtn')?.addEventListener('click', () => copyResults(formattedData, formatLabel));
+  
+  if (outputFormat !== 'json') {
+    document.getElementById('downloadResultsBtn')?.addEventListener('click', () => downloadResults(formattedData, filename));
+  }
   
   // Save results to session for persistence
   saveResultsToSession(result, result.logs || []);
@@ -799,11 +822,28 @@ function displayDownloadSuccess(filename, format) {
 }
 
 // Copy Results
-function copyResults() {
-  const json = document.getElementById('resultsJson').textContent;
-  navigator.clipboard.writeText(json).then(() => {
-    showStatus('Results copied to clipboard ✓', 'success');
+function copyResults(content, formatLabel) {
+  const textToCopy = content || document.getElementById('resultsContent').textContent;
+  navigator.clipboard.writeText(textToCopy).then(() => {
+    showStatus(`${formatLabel || 'Results'} copied to clipboard ✓`, 'success');
+  }).catch(err => {
+    showStatus('Failed to copy to clipboard', 'error');
+    console.error('Copy error:', err);
   });
+}
+
+// Download Results
+function downloadResults(content, filename) {
+  const blob = new Blob([content], { type: 'text/plain' });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
+  showStatus(`Downloaded: ${filename} ✓`, 'success');
 }
 
 // Clear Results
@@ -1032,7 +1072,7 @@ function saveResultsToSession(results, logs) {
 
 // Restore last automation state on popup open
 async function restoreLastState() {
-  const { lastResult, lastError, lastDownload, status } = await chrome.storage.session.get(['lastResult', 'lastError', 'lastDownload', 'status']);
+  const { lastResult, lastError, status } = await chrome.storage.session.get(['lastResult', 'lastError', 'status']);
 
   if (status === 'complete' && lastResult) {
     displayResults(lastResult);
@@ -1041,10 +1081,6 @@ async function restoreLastState() {
     }
     showStatus('Last run completed successfully.', 'success');
     addLog('Restored results from background execution', 'info');
-  } else if (status === 'complete' && lastDownload) {
-    displayDownloadSuccess(lastDownload.filename, lastDownload.format);
-    showStatus(`Last run completed: ${lastDownload.filename}`, 'success');
-    addLog('Background automation completed with download', 'info');
   } else if (status === 'error' && lastError) {
     displayError(lastError);
     addLog(`Last run failed: ${lastError}`, 'error');

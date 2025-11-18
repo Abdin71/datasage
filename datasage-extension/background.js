@@ -73,104 +73,41 @@ async function runAutomationInBackground(config) {
     
     console.log('Content-Type:', contentType, 'Output format:', outputFormat);
     
-    let result;
+    // Always parse as JSON now (backend always returns JSON)
+    const result = await response.json();
     
-    if (outputFormat === 'json' || contentType.includes('application/json')) {
-      // Parse as JSON
-      result = await response.json();
-      
-      console.log('Parsed JSON result:', result.success);
-      
-      // Store the result in session storage
-      await chrome.storage.session.set({ 
-        lastResult: result, 
-        status: 'complete',
-        timestamp: Date.now()
-      });
+    console.log('Parsed JSON result:', result.success);
+    
+    // Store the result in session storage
+    await chrome.storage.session.set({ 
+      lastResult: result, 
+      status: 'complete',
+      timestamp: Date.now()
+    });
 
-      console.log('Result stored in session storage');
+    console.log('Result stored in session storage');
 
-      // Send the result back to the popup (if it's open)
-      chrome.runtime.sendMessage({ 
-        type: 'AUTOMATION_COMPLETE', 
-        result: result 
-      }).catch((err) => {
-        // Popup might be closed, that's okay
-        console.log('Popup closed, result saved to session storage', err);
-      });
+    // Send the result back to the popup (if it's open)
+    chrome.runtime.sendMessage({ 
+      type: 'AUTOMATION_COMPLETE', 
+      result: result 
+    }).catch((err) => {
+      // Popup might be closed, that's okay
+      console.log('Popup closed, result saved to session storage', err);
+    });
 
-      console.log('Creating notification...');
+    console.log('Creating notification...');
 
-      // Create a desktop notification to inform the user
-      chrome.notifications.create({
-        type: 'basic',
-        iconUrl: 'icons/icon-128.png',
-        title: 'DataSage Automation Complete',
-        message: `Project "${config.projectName}" finished successfully.`,
-        priority: 2
-      });
-      
-      console.log('Notification created');
-    } else {
-      console.log('Handling non-JSON response');
-      
-      // Handle CSV/XML formats - store blob info
-      const blob = await response.blob();
-      const contentDisposition = response.headers.get('Content-Disposition');
-      let filename = `data.${outputFormat}`;
-      
-      if (contentDisposition) {
-        const filenameMatch = contentDisposition.match(/filename="?(.+?)"?$/);
-        if (filenameMatch) {
-          filename = filenameMatch[1];
-        }
-      }
-      
-      console.log('Processing download for:', filename);
-      
-      // Convert blob to base64 for storage
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64data = reader.result;
-        
-        console.log('Blob converted to base64');
-        
-        // Store the download info
-        await chrome.storage.session.set({
-          lastDownload: {
-            filename: filename,
-            format: outputFormat,
-            data: base64data
-          },
-          status: 'complete',
-          timestamp: Date.now()
-        });
-        
-        console.log('Download info stored');
-        
-        // Notify popup
-        chrome.runtime.sendMessage({ 
-          type: 'AUTOMATION_COMPLETE_DOWNLOAD',
-          filename: filename,
-          format: outputFormat,
-          data: base64data
-        }).catch((err) => {
-          console.log('Popup closed, download saved to session storage', err);
-        });
-        
-        // Create notification
-        chrome.notifications.create({
-          type: 'basic',
-          iconUrl: 'icons/icon-128.png',
-          title: 'DataSage Export Complete',
-          message: `${filename} is ready to download.`,
-          priority: 2
-        });
-        
-        console.log('Download notification created');
-      };
-      reader.readAsDataURL(blob);
-    }
+    // Create a desktop notification to inform the user
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: 'icons/icon-128.png',
+      title: 'DataSage Automation Complete',
+      message: `Project "${config.projectName}" finished successfully.`,
+      priority: 2
+    });
+    
+    console.log('Notification created');
 
   } catch (error) {
     console.error('Background automation error:', error);
