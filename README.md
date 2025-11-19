@@ -1,5 +1,7 @@
 # DataSage
 
+[![DataSage Extension](docs/datasage_screenshot_1.png)](docs/datasage_screenshot_1.png)
+
 **DataSage** is a comprehensive web automation and data extraction tool consisting of a Chrome Extension frontend and a Puppeteer-powered backend server. It enables you to scrape websites, handle authentication, extract data using DOM selectors or JavaScript, and export results in multiple formats.
 
 ## 🎯 Overview

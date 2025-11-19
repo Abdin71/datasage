@@ -3,6 +3,7 @@ let extractionRules = [];
 let isRunning = false;
 
 // Session-only password storage (cleared when popup closes)
+// Passwords are encrypted in memory for added security
 let sessionPassword = null;
 
 // Backend API URL
@@ -39,6 +40,7 @@ document.addEventListener('DOMContentLoaded', () => {
   updateRulesCount();
   addDemoRule();
   restoreLastState(); // Restore last automation state on open
+  displayVersion(); // Display extension version
 });
 
 // Listen for messages FROM the background script
@@ -185,9 +187,9 @@ function toggleAuthFields() {
   
   if (requiresAuth) {
     authFields.classList.remove('hidden');
-    // Restore session password if exists
+    // Restore session password if exists (decrypt it first)
     if (sessionPassword) {
-      document.getElementById('password').value = sessionPassword;
+      document.getElementById('password').value = decryptPassword(sessionPassword);
     }
   } else {
     authFields.classList.add('hidden');
@@ -195,9 +197,11 @@ function toggleAuthFields() {
 }
 
 // Store password in session memory only (not persisted to disk)
+// Password is encrypted before storing in session memory
 function storePasswordInSession() {
   const password = document.getElementById('password').value;
-  sessionPassword = password;
+  // Encrypt password before storing in session memory
+  sessionPassword = encryptPassword(password);
   saveSessionState(); // Persist to session storage
 }
 
@@ -1138,5 +1142,14 @@ async function restoreLastState() {
     displayError(lastError);
     addLog(`Last run failed: ${lastError}`, 'error');
     showStatus(`Last run failed: ${lastError}`, 'error');
+  }
+}
+
+// Display extension version from manifest
+function displayVersion() {
+  const manifest = chrome.runtime.getManifest();
+  const versionElement = document.getElementById('versionInfo');
+  if (versionElement && manifest.version) {
+    versionElement.textContent = `v${manifest.version}`;
   }
 }
