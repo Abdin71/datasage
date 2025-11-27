@@ -62,16 +62,15 @@ class PuppeteerRunner {
       
       // Navigate to target URL
       logs.push({ level: 'info', message: `Navigating to ${config.target.url}...`, timestamp: new Date().toISOString() });
-      
       await this.page.goto(config.target.url, {
-        waitUntil: 'networkidle2',
+        waitUntil: 'networkidle0',
         timeout: timeout
       });
       
       logs.push({ level: 'success', message: 'Page loaded successfully', timestamp: new Date().toISOString() });
       
-      // Wait a bit for dynamic content
-      await this.page.waitForTimeout(2000);
+      // Wait longer for dynamic content (especially for finance sites with streaming data)
+      await this.page.waitForTimeout(5000);
       
       // Extract data
       logs.push({ level: 'info', message: 'Extracting data...', timestamp: new Date().toISOString() });
@@ -81,7 +80,18 @@ class PuppeteerRunner {
           let value;
           
           if (rule.type === 'dom') {
-            value = await extraction.extractDOM(this.page, rule);
+            // Check if it's a table or form extraction
+            if (rule.extractionType === 'table') {
+              value = await extraction.extractTable(this.page, rule.selector);
+            } else if (rule.extractionType === 'form') {
+              value = await extraction.extractForm(this.page, rule.selector);
+            } else if (rule.extractionType === 'list') {
+              // Extract multiple elements
+              value = await extraction.extractDOMMultiple(this.page, rule);
+            } else {
+              // Single element extraction
+              value = await extraction.extractDOM(this.page, rule);
+            }
             logs.push({ 
               level: 'success', 
               message: `Extracted "${rule.name}": ${this.formatValue(value)}`,
@@ -136,12 +146,23 @@ class PuppeteerRunner {
    */
   formatValue(value) {
     if (value === null || value === undefined) return 'null';
+    
+    if (Array.isArray(value)) {
+      return `Array(${value.length} items)`;
+    }
+    
+    if (typeof value === 'object') {
+      if (value.headers && value.rows) {
+        return `Table(${value.rows.length} rows, ${value.headers.length} columns)`;
+      }
+      const keys = Object.keys(value);
+      return `Object(${keys.length} fields)`;
+    }
+    
     if (typeof value === 'string' && value.length > 50) {
       return value.substring(0, 50) + '...';
     }
-    if (typeof value === 'object') {
-      return JSON.stringify(value).substring(0, 50) + '...';
-    }
+    
     return String(value);
   }
 }

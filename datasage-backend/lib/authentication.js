@@ -24,7 +24,7 @@ class Authentication {
       });
       
       // Wait for login form
-      const usernameSelector = authConfig.selectors?.username || '#username';
+      const usernameSelector = authConfig.selectors?.username || '#email';
       const passwordSelector = authConfig.selectors?.password || '#password';
       const submitSelector = authConfig.selectors?.submit || "button[type='submit']";
       

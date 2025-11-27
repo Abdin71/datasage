@@ -16,30 +16,45 @@ class Extraction {
       }
       
       // Wait for element to be present
-      await page.waitForSelector(selector, { timeout: 5000 });
+      await page.waitForSelector(selector, { timeout: 10000 });
       
-      // Extract data
-      const value = await page.evaluate((sel, attr) => {
-        const element = document.querySelector(sel);
-        
-        if (!element) {
-          return null;
+      // Wait a bit more for content to load
+      await page.waitForTimeout(1000);
+      
+      // Extract data with retry for empty content
+      let value = null;
+      let attempts = 0;
+      const maxAttempts = 3;
+      
+      while (attempts < maxAttempts && (value === null || value === '')) {
+        if (attempts > 0) {
+          await page.waitForTimeout(2000); // Wait before retry
         }
         
-        // Handle different attribute types
-        if (attr === 'textContent') {
-          return element.textContent?.trim();
-        } else if (attr === 'innerText') {
-          return element.innerText?.trim();
-        } else if (attr === 'innerHTML') {
-          return element.innerHTML?.trim();
-        } else if (attr === 'count') {
-          // Count all elements matching the selector
-          return document.querySelectorAll(sel).length;
-        } else {
-          return element.getAttribute(attr);
-        }
-      }, selector, attribute);
+        value = await page.evaluate((sel, attr) => {
+          const element = document.querySelector(sel);
+          
+          if (!element) {
+            return null;
+          }
+          
+          // Handle different attribute types
+          if (attr === 'textContent') {
+            return element.textContent?.trim();
+          } else if (attr === 'innerText') {
+            return element.innerText?.trim();
+          } else if (attr === 'innerHTML') {
+            return element.innerHTML?.trim();
+          } else if (attr === 'count') {
+            // Count all elements matching the selector
+            return document.querySelectorAll(sel).length;
+          } else {
+            return element.getAttribute(attr);
+          }
+        }, selector, attribute);
+        
+        attempts++;
+      }
       
       return value;
       
@@ -56,43 +71,56 @@ class Extraction {
     try {
       const { selector, attribute = 'textContent' } = rule;
       
-      // Extract data using XPath
-      const value = await page.evaluate((xpath, attr) => {
-        const result = document.evaluate(
-          xpath,
-          document,
-          null,
-          XPathResult.FIRST_ORDERED_NODE_TYPE,
-          null
-        );
-        
-        const element = result.singleNodeValue;
-        
-        if (!element) {
-          return null;
+      // Wait for element to exist and have content (retry up to 3 times)
+      let value = null;
+      let attempts = 0;
+      const maxAttempts = 3;
+      
+      while (attempts < maxAttempts && (value === null || value === '')) {
+        if (attempts > 0) {
+          await page.waitForTimeout(2000); // Wait before retry
         }
         
-        // Handle different attribute types
-        if (attr === 'textContent') {
-          return element.textContent?.trim();
-        } else if (attr === 'innerText') {
-          return element.innerText?.trim();
-        } else if (attr === 'innerHTML') {
-          return element.innerHTML?.trim();
-        } else if (attr === 'count') {
-          // Count all elements matching the XPath
-          const countResult = document.evaluate(
+        // Extract data using XPath
+        value = await page.evaluate((xpath, attr) => {
+          const result = document.evaluate(
             xpath,
             document,
             null,
-            XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+            XPathResult.FIRST_ORDERED_NODE_TYPE,
             null
           );
-          return countResult.snapshotLength;
-        } else {
-          return element.getAttribute(attr);
-        }
-      }, selector, attribute);
+          
+          const element = result.singleNodeValue;
+          
+          if (!element) {
+            return null;
+          }
+          
+          // Handle different attribute types
+          if (attr === 'textContent') {
+            return element.textContent?.trim();
+          } else if (attr === 'innerText') {
+            return element.innerText?.trim();
+          } else if (attr === 'innerHTML') {
+            return element.innerHTML?.trim();
+          } else if (attr === 'count') {
+            // Count all elements matching the XPath
+            const countResult = document.evaluate(
+              xpath,
+              document,
+              null,
+              XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+              null
+            );
+            return countResult.snapshotLength;
+          } else {
+            return element.getAttribute(attr);
+          }
+        }, selector, attribute);
+        
+        attempts++;
+      }
       
       return value;
       
@@ -224,10 +252,33 @@ class Extraction {
         const table = document.querySelector(sel);
         if (!table) return null;
         
-        const headers = Array.from(table.querySelectorAll('thead th, thead td'))
-          .map(th => th.textContent.trim());
+        // Try to get headers from thead, otherwise use first row
+        let headers = [];
+        const theadHeaders = table.querySelectorAll('thead th, thead td');
         
-        const rows = Array.from(table.querySelectorAll('tbody tr'))
+        if (theadHeaders.length > 0) {
+          headers = Array.from(theadHeaders).map(th => th.textContent.trim());
+        } else {
+          // No thead, try first row as headers
+          const firstRow = table.querySelector('tr');
+          if (firstRow) {
+            const cells = firstRow.querySelectorAll('th, td');
+            headers = Array.from(cells).map(cell => cell.textContent.trim());
+          }
+        }
+        
+        // If still no headers, generate column names
+        if (headers.length === 0) {
+          const firstRow = table.querySelector('tr');
+          if (firstRow) {
+            const cellCount = firstRow.querySelectorAll('th, td').length;
+            headers = Array.from({ length: cellCount }, (_, i) => `Column${i + 1}`);
+          }
+        }
+        
+        // Get data rows (skip header row if it was used as header)
+        const rowSelector = theadHeaders.length > 0 ? 'tbody tr' : 'tr:not(:first-child)';
+        const rows = Array.from(table.querySelectorAll(rowSelector))
           .map(row => {
             const cells = Array.from(row.querySelectorAll('td, th'))
               .map(cell => cell.textContent.trim());
@@ -238,7 +289,8 @@ class Extraction {
             });
             
             return rowData;
-          });
+          })
+          .filter(row => Object.values(row).some(val => val !== '')); // Remove empty rows
         
         return { headers, rows };
       }, tableSelector);

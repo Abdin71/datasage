@@ -304,7 +304,7 @@ function clearAutomation() {
   document.getElementById('password').value = '';
   // Clear session password
   sessionPassword = null;
-  document.getElementById('usernameSelector').value = '#username';
+  document.getElementById('usernameSelector').value = '#email';
   document.getElementById('passwordSelector').value = '#password';
   document.getElementById('submitSelector').value = "button[type='submit']";
   
@@ -671,6 +671,7 @@ async function runAutomation() {
     extraction: extractionRules.map(rule => ({
       name: rule.name,
       type: rule.type,
+      extractionType: rule.extractionType || 'custom',
       selector: rule.type === 'dom' ? rule.selector : undefined,
       selectorType: rule.type === 'dom' ? (rule.selectorType || 'css') : undefined,
       attribute: rule.type === 'dom' ? rule.attribute : undefined,
@@ -1015,7 +1016,7 @@ function loadSavedConfig() {
       if (sessionPassword) {
         document.getElementById('password').value = sessionPassword;
       }
-      document.getElementById('usernameSelector').value = config.usernameSelector || '#username';
+      document.getElementById('usernameSelector').value = config.usernameSelector || '#email';
       document.getElementById('passwordSelector').value = config.passwordSelector || '#password';
       document.getElementById('submitSelector').value = config.submitSelector || "button[type='submit']";
       
