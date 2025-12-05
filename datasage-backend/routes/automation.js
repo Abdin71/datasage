@@ -3,6 +3,7 @@ const router = express.Router();
 const puppeteerRunner = require('../lib/puppeteer-runner');
 const formatter = require('../lib/formatter');
 const validator = require('../lib/validator');
+const mockData = require('../lib/mock-data');
 const logger = require('../lib/logger');
 
 /**
@@ -29,6 +30,35 @@ router.post('/automation', async (req, res) => {
     
     logger.info(`Starting automation for project: ${config.projectName || 'Unnamed'}`);
     logger.info(`Target URL: ${config.target.url}`);
+    
+    // Check if mock data mode is enabled
+    if (mockData.shouldUseMockData()) {
+      logger.info('🎭 Running in MOCK MODE - returning demo data');
+      const result = mockData.generateMockResult(config);
+      const duration = Date.now() - startTime;
+      
+      // Get output format (default to json)
+      const outputFormat = (config.outputFormat || 'json').toLowerCase();
+      
+      // Format the data based on requested format
+      const formattedData = formatter.format(result.data, outputFormat);
+      const extension = formatter.getFileExtension(outputFormat);
+      
+      // Return mock data with same structure as real automation
+      return res.json({
+        success: true,
+        projectName: config.projectName,
+        timestamp: new Date().toISOString(),
+        duration: `${duration}ms`,
+        outputFormat: outputFormat,
+        formattedData: formattedData,
+        data: result.data,
+        logs: result.logs,
+        screenshots: [],
+        filename: `${config.projectName || 'data'}.${extension}`,
+        isMockData: true
+      });
+    }
     
     // Run automation
     const result = await puppeteerRunner.run(config);

@@ -335,6 +335,76 @@ This uses `nodemon` to automatically restart the server when files change.
 | `HEADLESS` | true | Run browser in headless mode |
 | `PUPPETEER_TIMEOUT` | 30000 | Default timeout (ms) |
 | `LOG_LEVEL` | info | Logging level (error/warn/info/debug) |
+| `ENABLE_MOCK_DATA` | false | Enable mock data mode for demos (no Puppeteer) |
+
+### Mock Data Mode
+
+DataSage includes a mock data feature for demos and testing that returns instant results without running Puppeteer automation.
+
+**Enable Mock Mode:**
+
+```bash
+# In .env file
+ENABLE_MOCK_DATA=true
+```
+
+**How It Works:**
+
+When enabled, the server:
+- ✅ Validates configuration normally
+- ✅ Generates realistic mock data based on extraction rules
+- ✅ Returns data in requested format (JSON/CSV/XML)
+- ✅ Provides mock logs with timestamps
+- ❌ **Skips** Puppeteer browser launch
+- ❌ **Skips** actual website navigation
+- ⚡ **~10-50ms response time** vs 3-15 seconds for real automation
+
+**Smart Mock Data Generation:**
+
+The mock data generator creates realistic values based on field names:
+- `price`, `cost`, `revenue` → `$1,299.99`
+- `email` → `demo1@example.com`
+- `date`, `time` → `2025-12-05`
+- `status` → `Active`, `Pending`, `Completed`
+- `percent`, `rate` → `45.2%`
+- `count`, `total` → Random integers
+
+**Extraction Type Support:**
+
+- **Table extraction** → 5-row product table with headers
+- **Form extraction** → Complete form with name, email, phone, address
+- **List extraction** → 5-item array
+- **Simple values** → Smart mock data based on field name
+
+**Example Mock Response:**
+
+```json
+{
+  "success": true,
+  "isMockData": true,
+  "duration": "12ms",
+  "data": {
+    "Product Price": "$1,234.56",
+    "Product Table": {
+      "headers": ["Product Name", "Price", "Stock", "Category"],
+      "rows": [
+        {"Product Name": "Laptop Pro", "Price": "$1,299.99", ...}
+      ]
+    }
+  },
+  "logs": [
+    {"level": "info", "message": "🎭 Mock Mode: Generating demo data..."},
+    {"level": "success", "message": "Extracted \"Product Price\": $1,234.56"}
+  ]
+}
+```
+
+**Use Cases:**
+
+- 🎬 **Product Demos** - Show features without waiting for real automation
+- 🧪 **Frontend Testing** - Test UI without backend dependencies
+- 📊 **Format Testing** - Verify CSV/XML/JSON output quickly
+- 🚀 **Development** - Faster iteration when building features
 
 ### Logging
 
